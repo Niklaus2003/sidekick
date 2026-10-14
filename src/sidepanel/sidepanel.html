@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sidekick — AI Browser Copilot</title>
+  <meta name="description" content="A privacy-first, human-in-the-loop Chrome side-panel AI agent that reads, understands, and safely acts on web pages in English.">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body class="theme-dark">
+  <div class="app-container" id="app-root">
+
+    <!-- Top Cockpit Header -->
+    <header class="app-header" id="app-header">
+      <div class="header-top-row">
+        <div class="brand-group">
+          <div class="brand-logo" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" fill="url(#brand-grad)" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
+              <defs>
+                <linearGradient id="brand-grad" x1="3" y1="2" x2="21" y2="22" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#818CF8"/>
+                  <stop offset="1" stop-color="#C084FC"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <h1 class="brand-title">Sidekick</h1>
+            <span class="brand-subtitle">AI Browser Copilot</span>
+          </div>
+        </div>
+
+        <div class="header-status-group">
+          <span class="badge badge-lang" id="badge-lang-policy" title="Strict English-only communication policy">EN Only</span>
+          <span class="badge badge-status badge-ready" id="badge-engine-status">Ready</span>
+        </div>
+      </div>
+
+      <!-- Active Webpage Bar -->
+      <div class="active-tab-bar" id="active-tab-bar" title="Current Active Webpage">
+        <span class="tab-icon" id="tab-favicon">🌐</span>
+        <span class="tab-url-text" id="tab-url-display">Detecting active page...</span>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="nav-tabs" role="tablist" aria-label="Main Navigation">
+        <button class="nav-tab active" id="tab-btn-chat" data-target="view-chat" role="tab" aria-selected="true">
+          <span class="tab-label">Chat</span>
+        </button>
+        <button class="nav-tab" id="tab-btn-summary" data-target="view-summary" role="tab" aria-selected="false">
+          <span class="tab-label">Summary</span>
+        </button>
+        <button class="nav-tab" id="tab-btn-inspector" data-target="view-inspector" role="tab" aria-selected="false">
+          <span class="tab-label">Actions</span>
+        </button>
+        <button class="nav-tab" id="tab-btn-profile" data-target="view-profile" role="tab" aria-selected="false">
+          <span class="tab-label">Profile</span>
+        </button>
+        <button class="nav-tab" id="tab-btn-settings" data-target="view-settings" role="tab" aria-selected="false">
+          <span class="tab-label">Settings</span>
+        </button>
+      </nav>
+    </header>
+
+    <!-- Main Views Scroll Area -->
+    <main class="app-main" id="app-main">
+
+      <!-- View 1: Chat -->
+      <section class="tab-panel active" id="view-chat" role="tabpanel" aria-labelledby="tab-btn-chat">
+        <div class="chat-container">
+          <div class="chat-messages" id="chat-messages">
+            <div class="chat-bubble ai-bubble welcome-card">
+              <div class="welcome-header">
+                <strong>Hello, I am Sidekick! 👋</strong>
+              </div>
+              <p>I can help you read, understand, and safely act on this webpage. What would you like to do?</p>
+              <div class="quick-prompt-chips">
+                <button class="prompt-chip" data-prompt="Summarize the key points of this page in 5 bullet points.">⚡ Summarize page</button>
+                <button class="prompt-chip" data-prompt="What are the main takeaways from this article?">💡 Key takeaways</button>
+                <button class="prompt-chip" data-prompt="Explain the technical concepts on this page in simple English.">📖 Explain in simple English</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-input-wrapper">
+            <form id="chat-form" class="chat-form">
+              <textarea id="chat-input" class="chat-input" rows="1" placeholder="Ask about this page in English..." aria-label="Message Sidekick"></textarea>
+              <div class="chat-actions">
+                <button type="button" class="btn-icon" id="btn-screenshot" title="Capture visual region of page" aria-label="Take screenshot">
+                  📷
+                </button>
+                <button type="submit" class="btn-send" id="btn-chat-send" title="Send query" aria-label="Send message">
+                  ➤
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 2: Summary -->
+      <section class="tab-panel" id="view-summary" role="tabpanel" aria-labelledby="tab-btn-summary">
+        <div class="panel-content">
+          <div class="summary-controls-card card">
+            <div class="control-header">
+              <h3>Article & YouTube Reader</h3>
+              <div class="toggle-group" role="group" aria-label="Summary Detail Level">
+                <button class="toggle-btn active" id="btn-detail-concise" data-level="concise">Concise</button>
+                <button class="toggle-btn" id="btn-detail-detailed" data-level="detailed">Detailed</button>
+              </div>
+            </div>
+            <p class="section-hint">Extracts clean article content or YouTube chapter notes strictly in English.</p>
+            <button class="btn btn-primary btn-block" id="btn-trigger-summary">
+              ✨ Summarize Current Page
+            </button>
+          </div>
+
+          <div class="summary-results-container card" id="summary-results-card">
+            <div class="empty-state" id="summary-empty-state">
+              <span class="empty-icon">📰</span>
+              <p>Click <strong>"Summarize Current Page"</strong> to extract and structure this page's content.</p>
+            </div>
+            <div class="summary-content hidden" id="summary-content-display">
+              <!-- Dynamically populated by Slice 3 -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 3: Actions & Element Inspector -->
+      <section class="tab-panel" id="view-inspector" role="tabpanel" aria-labelledby="tab-btn-inspector">
+        <div class="panel-content">
+          <div class="card action-intro-card">
+            <div class="flex-between">
+              <h3>Human-in-the-Loop Actions</h3>
+              <label class="switch-label">
+                <input type="checkbox" id="check-dry-run">
+                <span class="switch-text">Dry Run Mode</span>
+              </label>
+            </div>
+            <p class="section-hint">Sidekick scans interactive elements, proposes actions one step at a time, and never clicks without your approval.</p>
+            <button class="btn btn-secondary btn-block" id="btn-scan-elements">
+              🎯 Scan Interactive Elements
+            </button>
+          </div>
+
+          <div class="card action-proposal-card" id="action-proposal-container">
+            <div class="empty-state" id="action-empty-state">
+              <span class="empty-icon">🛡️</span>
+              <p>No active action in progress. Start by asking Sidekick a task or scanning the page.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 4: Profile & Saved Skills -->
+      <section class="tab-panel" id="view-profile" role="tabpanel" aria-labelledby="tab-btn-profile">
+        <div class="panel-content">
+          <div class="card">
+            <h3>Local Profile Memory</h3>
+            <p class="section-hint">Stored strictly on your device via <code>chrome.storage.local</code>. Never sent to third parties.</p>
+            <form id="profile-form" class="form-vertical">
+              <div class="form-group">
+                <label for="prof-name">Full Name</label>
+                <input type="text" id="prof-name" placeholder="Aaron Francis">
+              </div>
+              <div class="form-group">
+                <label for="prof-email">Email Address</label>
+                <input type="email" id="prof-email" placeholder="aaron@example.com">
+              </div>
+              <div class="form-group">
+                <label for="prof-institution">Institution / University</label>
+                <input type="text" id="prof-institution" placeholder="University / Workplace">
+              </div>
+              <div class="form-group">
+                <label for="prof-linkedin">LinkedIn / Portfolio URL</label>
+                <input type="url" id="prof-linkedin" placeholder="https://linkedin.com/in/...">
+              </div>
+              <div class="form-group">
+                <label for="prof-tone">Preferred Response Tone (English Only)</label>
+                <select id="prof-tone">
+                  <option value="concise">Concise & Direct</option>
+                  <option value="professional" selected>Professional & Clear</option>
+                  <option value="eli5">Simple / ELI5 (Explain Like I'm 5)</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-secondary" id="btn-save-profile">Save Profile</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- View 5: Settings (Slice 1 Primary Focus) -->
+      <section class="tab-panel" id="view-settings" role="tabpanel" aria-labelledby="tab-btn-settings">
+        <div class="panel-content">
+          <div class="card settings-card">
+            <h3>API Credentials</h3>
+            <p class="section-hint">Sidekick uses Groq as the high-speed primary inference engine and Gemini as a backup fallback.</p>
+
+            <form id="settings-form" class="form-vertical">
+              <div class="form-group">
+                <label for="input-groq-key">
+                  <span>Groq API Key (Primary Engine)</span>
+                  <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" class="link-small">Get Key ↗</a>
+                </label>
+                <div class="input-with-action">
+                  <input type="password" id="input-groq-key" placeholder="gsk_..." autocomplete="off" spellcheck="false" required>
+                  <button type="button" class="btn-toggle-visibility" id="btn-toggle-groq-key" title="Show/Hide API Key">👁️</button>
+                </div>
+                <span class="field-help">Fast LPU execution with open-weight models (no internal security blockage).</span>
+              </div>
+
+              <div class="form-group">
+                <label for="input-gemini-key">
+                  <span>Gemini API Key (Safety Fallback)</span>
+                  <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" class="link-small">Get Key ↗</a>
+                </label>
+                <div class="input-with-action">
+                  <input type="password" id="input-gemini-key" placeholder="AIzaSy..." autocomplete="off" spellcheck="false">
+                  <button type="button" class="btn-toggle-visibility" id="btn-toggle-key" title="Show/Hide API Key">👁️</button>
+                </div>
+                <span class="field-help">Automatic backup if Groq rate limits or network issues occur.</span>
+              </div>
+
+              <div class="btn-group">
+                <button type="button" class="btn btn-outline" id="btn-test-key">
+                  <span id="test-btn-text">Test Connections</span>
+                  <span class="spinner hidden" id="test-spinner"></span>
+                </button>
+                <button type="submit" class="btn btn-primary" id="btn-save-settings">Save Keys</button>
+              </div>
+
+              <div class="alert-box hidden" id="settings-alert" role="alert"></div>
+
+              <hr class="divider">
+
+              <h3>Model & Execution Settings</h3>
+
+              <div class="form-group">
+                <label for="select-model">Primary Model (Groq LPU)</label>
+                <select id="select-model">
+                  <option value="openai/gpt-oss-120b" selected>openai/gpt-oss-120b (Primary: Flagship Reasoning, Fast)</option>
+                  <option value="openai/gpt-oss-20b">openai/gpt-oss-20b (Primary: Ultra-Low Latency)</option>
+                  <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Direct Gemini Mode)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="input-step-limit">Max Steps per Action Task</label>
+                <input type="number" id="input-step-limit" min="3" max="25" value="10">
+                <span class="field-help">Hard limit to prevent infinite loops (Default: 10).</span>
+              </div>
+
+              <div class="form-group">
+                <label>Language Policy</label>
+                <div class="locked-field">
+                  <span>Strict English-Only (Enforced by System)</span>
+                  <span class="badge badge-locked">Locked</span>
+                </div>
+                <span class="field-help">Sidekick communicates exclusively in English and never outputs Hindi or Hinglish.</span>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Sticky Bottom Cockpit Footer -->
+    <footer class="app-footer" id="app-footer">
+      <div class="footer-status">
+        <span class="status-dot online"></span>
+        <span class="status-text" id="footer-status-text">Sidekick Ready</span>
+      </div>
+      <button class="btn btn-stop-danger" id="btn-emergency-stop" title="Immediate Kill Switch (Esc)">
+        ⏹ STOP
+      </button>
+    </footer>
+
+  </div>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>
