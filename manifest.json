@@ -38,6 +38,11 @@
       "matches": ["<all_urls>"],
       "js": ["src/content/readability.js", "src/content/content_script.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.youtube.com/*", "*://youtu.be/*"],
+      "js": ["src/content/youtube_extractor.js"],
+      "run_at": "document_idle"
     }
   ]
 }

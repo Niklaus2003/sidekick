@@ -48,7 +48,7 @@ ${userQuery}`;
 }
 
 /**
- * Build structured article summary prompt
+ * Build structured article summary prompt (Slice 3 & Slice 5)
  * @param {object} params
  * @param {string} params.articleTitle
  * @param {string} params.articleText
@@ -66,45 +66,88 @@ ARTICLE TITLE: ${articleTitle}
 ${articleText.trim()}
 </ARTICLE_TEXT>
 
+MODE: ${isDetailed ? "DETAILED (Comprehensive In-Depth Analysis)" : "CONCISE (Fast Executive Summary)"}
+
 OUTPUT FORMAT REQUIREMENTS:
 1. ## One-Line TL;DR
-   A single, impactful sentence capturing the core thesis.
+   A single, impactful, high-level thesis sentence capturing the core essence.
 2. ## Key Takeaways
-   ${isDetailed ? "7-10 comprehensive bullet points detailing key facts, data, arguments, and conclusions." : "Exactly 5 concise, actionable bullet points."}
+   ${
+     isDetailed
+       ? "8 to 10 detailed, comprehensive bullet points detailing specific facts, data, arguments, background context, and nuanced conclusions."
+       : "Exactly 5 concise, high-impact bullet points focusing strictly on essential facts."
+   }
 3. ## What To Do Next / Actionable Insight
-   1-2 concrete action items or takeaways for the reader.
+   ${
+     isDetailed
+       ? "2 to 3 practical, concrete next steps, implementations, or workflow recommendations."
+       : "1 to 2 concise action items for the reader."
+   }
 
-CRITICAL: Respond exclusively in English. Do not include any Hindi or Hinglish phrases.`;
+LANGUAGE & SAFETY POLICY:
+- Respond EXCLUSIVELY in natural, fluent English.
+- If the original article is written in a foreign language (e.g. Hindi, Spanish, French, German, Japanese, Chinese), you MUST translate all concepts cleanly into English.
+- Under NO circumstance should any Hindi, Hinglish, or non-English characters appear in the output.`;
 }
 
 /**
- * Build YouTube video summary prompt
+ * Build YouTube video chapter summary prompt (Slice 4 & Slice 5)
  * @param {object} params
  * @param {string} params.videoTitle
  * @param {string} [params.channelName]
+ * @param {string} [params.duration]
  * @param {string} [params.description]
+ * @param {Array<{ timestamp: string, title: string }>} [params.chapters]
  * @param {string} [params.transcriptText]
+ * @param {"concise" | "detailed"} [params.detailLevel="concise"]
  * @returns {string}
  */
-export function buildYouTubeSummaryPrompt({ videoTitle, channelName = "", description = "", transcriptText = "" }) {
-  return `Please generate a structured summary for this YouTube video strictly in clear English.
+export function buildYouTubeSummaryPrompt({
+  videoTitle,
+  channelName = "",
+  duration = "",
+  description = "",
+  chapters = [],
+  transcriptText = "",
+  detailLevel = "concise"
+}) {
+  const isDetailed = detailLevel === "detailed";
+
+  const chapterList =
+    chapters && chapters.length > 0
+      ? `KNOWN VIDEO CHAPTERS:\n${chapters.map((c) => `[${c.timestamp}] ${c.title}`).join("\n")}`
+      : "";
+
+  return `Please generate a structured, chronological chapter summary for this YouTube video strictly in clear English.
 
 VIDEO TITLE: ${videoTitle}
 CHANNEL: ${channelName}
+${duration ? `DURATION: ${duration}` : ""}
+
+${chapterList}
 
 VIDEO DESCRIPTION:
-${description.slice(0, 1000)}
+${description.slice(0, 1500)}
 
-${transcriptText ? `TRANSCRIPT / TIMED CUES:\n${transcriptText.slice(0, 15000)}` : ""}
+${transcriptText ? `TRANSCRIPT & CUES:\n${transcriptText.slice(0, 15000)}` : ""}
+
+MODE: ${isDetailed ? "DETAILED" : "CONCISE"}
 
 OUTPUT FORMAT:
-1. ## Overview (TL;DR)
-   A concise English summary of the video's main message.
-2. ## Chapter Breakdowns & Key Points
-   Bullet points covering main topics, including timestamps if available.
-3. ## Main Conclusion / Action Items
+1. ## One-Line TL;DR
+   A single clear sentence summarizing the entire video.
+2. ## Chapter Breakdowns & Key Moments
+   Chronological bullet points with clickable timestamp tags formatted strictly as [MM:SS] (or [HH:MM:SS]) followed by the takeaway.
+   Example:
+   * **[01:15]** Core problem statement and background overview.
+   * **[04:30]** Key demonstration and architecture breakdown.
+   ${isDetailed ? "Provide 7-10 detailed timestamped moments covering the entire duration." : "Provide 4-6 key timestamped moments."}
+3. ## What To Do Next / Main Conclusion
+   1-2 concrete action items or practical takeaways from the video.
 
-CRITICAL: All output must be strictly in English.`;
+CRITICAL LANGUAGE RULE:
+- All output must be strictly in English. Translate any foreign speech, captions, or descriptions completely into English.
+- Use the exact bracketed timestamp format [MM:SS] so viewers can navigate directly to key moments.`;
 }
 
 /**
