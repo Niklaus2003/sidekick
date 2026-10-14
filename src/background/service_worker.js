@@ -17,11 +17,17 @@ const DEFAULT_SETTINGS = {
   languagePolicy: "english_only"
 };
 
-// Load Context Menus module (Slice 7)
+// Load Context Menus module (Slice 7) and Capture Broker (Slice 8)
 try {
   importScripts("context_menus.js");
 } catch (e) {
   console.warn("[Sidekick Worker] Could not load context_menus.js via importScripts:", e);
+}
+
+try {
+  importScripts("capture_broker.js");
+} catch (e) {
+  console.warn("[Sidekick Worker] Could not load capture_broker.js via importScripts:", e);
 }
 
 const SETTINGS_KEY = "sidekick_settings";

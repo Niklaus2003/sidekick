@@ -20,6 +20,12 @@ export class ChatViewController {
       chatInput: document.getElementById("chat-input"),
       chatForm: document.getElementById("chat-form"),
       btnSend: document.getElementById("btn-chat-send"),
+      btnScreenshot: document.getElementById("btn-screenshot"),
+      previewBar: document.getElementById("screenshot-attachment-preview"),
+      previewImg: document.getElementById("screenshot-preview-img"),
+      previewDim: document.getElementById("screenshot-dimensions"),
+      btnRemoveScreenshot: document.getElementById("btn-remove-screenshot"),
+      fallbackBanner: document.getElementById("router-fallback-banner"),
       promptChips: document.querySelectorAll(".prompt-chip"),
       engineStatus: document.getElementById("badge-engine-status"),
       tabUrlDisplay: document.getElementById("tab-url-display"),
@@ -32,6 +38,8 @@ export class ChatViewController {
     this.activeTabUrl = "";
     this.cachedPageText = "";
     this.cachedPageTabId = null;
+    this.attachedScreenshotDataUrl = null;
+    this.attachedScreenshotMeta = null;
   }
 
   /**
@@ -42,6 +50,7 @@ export class ChatViewController {
 
     this.setupInputHandlers();
     this.setupPromptChips();
+    this.setupScreenshotHandler();
     this.setupTabListeners();
     this.listenToRuntimeMessages();
 
@@ -121,13 +130,102 @@ export class ChatViewController {
     this.cachedPageTabId = null;
   }
 
+  setupScreenshotHandler() {
+    this.elements.btnScreenshot?.addEventListener("click", async () => {
+      if (this.isStreaming) return;
+      try {
+        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!activeTab || !activeTab.id) {
+          this.showFallbackBanner("No active tab found to capture.", false);
+          return;
+        }
+
+        if (activeTab.url && /^(chrome|chrome-extension|devtools|about|data):/.test(activeTab.url)) {
+          this.showFallbackBanner("Cannot capture internal browser pages.", false);
+          return;
+        }
+
+        this.updateEngineBadge("Capturing screen...", "busy");
+
+        // Request background to initiate region capture
+        chrome.runtime.sendMessage({ type: "START_REGION_CAPTURE", tabId: activeTab.id }, (response) => {
+          if (chrome.runtime.lastError || (response && !response.success)) {
+            // Direct tab capture fallback if content script is restricted
+            chrome.runtime.sendMessage({ type: "CAPTURE_VISIBLE_TAB" }, (capRes) => {
+              if (capRes && capRes.success && capRes.dataUrl) {
+                this.attachScreenshot(capRes.dataUrl, { isFullPage: true });
+                this.updateEngineBadge("Ready", "ready");
+              }
+            });
+          }
+        });
+      } catch (err) {
+        console.warn("[Sidekick Chat] Screenshot trigger error:", err);
+      }
+    });
+
+    this.elements.btnRemoveScreenshot?.addEventListener("click", () => {
+      this.detachScreenshot();
+    });
+  }
+
+  attachScreenshot(dataUrl, meta = {}) {
+    this.attachedScreenshotDataUrl = dataUrl;
+    this.attachedScreenshotMeta = meta;
+
+    if (this.elements.previewBar && this.elements.previewImg) {
+      this.elements.previewImg.src = dataUrl;
+      if (this.elements.previewDim) {
+        this.elements.previewDim.textContent = meta.isFullPage
+          ? "Full Page"
+          : `${Math.round(meta.width || 0)}×${Math.round(meta.height || 0)} px`;
+      }
+      this.elements.previewBar.classList.remove("hidden");
+    }
+  }
+
+  detachScreenshot() {
+    this.attachedScreenshotDataUrl = null;
+    this.attachedScreenshotMeta = null;
+    if (this.elements.previewBar) {
+      this.elements.previewBar.classList.add("hidden");
+    }
+    if (this.elements.previewImg) {
+      this.elements.previewImg.src = "";
+    }
+  }
+
+  showFallbackBanner(text, isRateLimit = false) {
+    if (!this.elements.fallbackBanner || !text) return;
+    this.elements.fallbackBanner.textContent = `⚠️ ${text}`;
+    this.elements.fallbackBanner.className = isRateLimit
+      ? "router-fallback-banner banner-rate-limit"
+      : "router-fallback-banner";
+    this.elements.fallbackBanner.classList.remove("hidden");
+
+    setTimeout(() => {
+      this.elements.fallbackBanner?.classList.add("hidden");
+    }, 6000);
+  }
+
   /**
-   * Listen for runtime messages dispatched from background (e.g. Slice 7 context menus)
+   * Listen for runtime messages dispatched from background (Slice 7 context menus & Slice 8 captures)
    */
   listenToRuntimeMessages() {
     chrome.runtime.onMessage.addListener((message) => {
-      if (message && message.type === "EXECUTE_CONTEXT_ACTION" && message.payload) {
+      if (!message || !message.type) return;
+
+      if (message.type === "EXECUTE_CONTEXT_ACTION" && message.payload) {
         this.handleContextAction(message.payload);
+      } else if (message.type === "REGION_CAPTURED" && message.dataUrl) {
+        this.attachScreenshot(message.dataUrl, {
+          width: message.width,
+          height: message.height,
+          isFullPage: message.isFullPage
+        });
+        this.updateEngineBadge("Ready", "ready");
+      } else if (message.type === "REGION_CANCELLED") {
+        this.updateEngineBadge("Ready", "ready");
       }
     });
   }
@@ -226,9 +324,12 @@ export class ChatViewController {
   async handleUserQuery(userQuery) {
     if (this.isStreaming || !userQuery.trim()) return;
 
-    this.appendUserBubble(userQuery);
+    // Capture and detach any pending screenshot (Slice 8)
+    const attachedImage = this.attachedScreenshotDataUrl;
+    this.appendUserBubble(userQuery, "", attachedImage);
+    this.detachScreenshot();
 
-    this.updateEngineBadge("Grounding page...", "busy");
+    this.updateEngineBadge("Thinking...", "busy");
 
     // 1. Check if user provided an explicit URL in their message (Slice 6 enhancement)
     const pastedUrl = this.extractUrlFromQuery(userQuery);
@@ -251,9 +352,15 @@ export class ChatViewController {
       userQuery
     });
 
-    // 3. Stream AI answer
-    const modeBadge = pastedUrl ? (pageData?.isYouTube ? "YouTube Link" : "Web Link") : "Grounded Chat";
-    await this.executeStream(prompt, modeBadge);
+    // 3. Stream AI answer (passing attachedImage if present for Slice 8 multimodal)
+    let modeBadge = "Grounded Chat";
+    if (attachedImage) {
+      modeBadge = "Visual Inspection (Gemini Flash)";
+    } else if (pastedUrl) {
+      modeBadge = pageData?.isYouTube ? "YouTube Link" : "Web Link";
+    }
+
+    await this.executeStream(prompt, modeBadge, attachedImage);
   }
 
   /**
@@ -328,7 +435,7 @@ export class ChatViewController {
    * @param {string} prompt
    * @param {string} modeLabel
    */
-  async executeStream(prompt, modeLabel = "Sidekick") {
+  async executeStream(prompt, modeLabel = "Sidekick", imageData = null) {
     this.isStreaming = true;
     const { bubbleEl, contentEl } = this.createAiBubble(modeLabel);
 
@@ -344,13 +451,17 @@ export class ChatViewController {
 
       const result = await streamAiContent({
         prompt,
+        imageData,
         onChunk: (chunkText) => {
           accumulatedText = chunkText;
           contentEl.innerHTML = this.renderMarkdown(chunkText, true);
           contentEl.appendChild(cursor);
           this.scrollToBottom();
         },
-        onProviderChange: (provider) => {
+        onProviderChange: (provider, reason, isRateLimit) => {
+          if (reason) {
+            this.showFallbackBanner(reason, isRateLimit);
+          }
           this.updateEngineBadge(`${provider === "groq" ? "Groq" : "Gemini"}: Thinking...`, "busy");
         }
       });
@@ -467,7 +578,7 @@ export class ChatViewController {
    * @param {string} text
    * @param {string} [badgeText]
    */
-  appendUserBubble(text, badgeText = "") {
+  appendUserBubble(text, badgeText = "", imageData = null) {
     const bubble = document.createElement("div");
     bubble.className = "chat-bubble user-bubble";
 
@@ -476,6 +587,15 @@ export class ChatViewController {
       badge.className = "chat-action-badge";
       badge.textContent = badgeText;
       bubble.appendChild(badge);
+    }
+
+    if (imageData) {
+      const img = document.createElement("img");
+      img.className = "user-bubble-screenshot";
+      img.src = imageData;
+      img.alt = "Attached screen region";
+      img.title = "Attached screen region";
+      bubble.appendChild(img);
     }
 
     const textSpan = document.createElement("div");

@@ -17,11 +17,51 @@ const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
  * @param {string} [options.model]
  * @param {string} [options.apiKey]
  * @param {number} [options.temperature=0.7]
+/**
+ * Format inline base64 image data part for Gemini Multimodal API (Slice 8)
+ * @param {string | { mimeType?: string, data: string }} imageData
+ * @returns {object | null}
+ */
+export function formatInlineDataPart(imageData) {
+  if (!imageData) return null;
+
+  let mimeType = "image/png";
+  let base64Data = imageData;
+
+  if (typeof imageData === "object" && imageData.data) {
+    mimeType = imageData.mimeType || imageData.mime_type || "image/png";
+    base64Data = imageData.data;
+  } else if (typeof imageData === "string") {
+    const match = imageData.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      mimeType = match[1];
+      base64Data = match[2];
+    }
+  }
+
+  return {
+    inline_data: {
+      mime_type: mimeType,
+      data: base64Data
+    }
+  };
+}
+
+/**
+ * Standard content generation (non-streaming, text or multimodal)
+ * @param {object} options
+ * @param {string} options.prompt
+ * @param {string} [options.imageData] Base64 data URL or raw base64 PNG
+ * @param {string} [options.systemInstruction]
+ * @param {string} [options.model]
+ * @param {string} [options.apiKey]
+ * @param {number} [options.temperature=0.7]
  * @param {number} [options.maxOutputTokens=2048]
  * @returns {Promise<string>}
  */
 export async function generateContent({
   prompt,
+  imageData,
   systemInstruction = SYSTEM_ENGLISH_DIRECTIVE,
   model,
   apiKey,
@@ -38,13 +78,19 @@ export async function generateContent({
 
   const endpoint = `${GEMINI_API_BASE}/models/${effectiveModel}:generateContent?key=${effectiveKey.trim()}`;
 
+  const parts = [{ text: prompt }];
+  if (imageData) {
+    const imagePart = formatInlineDataPart(imageData);
+    if (imagePart) parts.push(imagePart);
+  }
+
   const payload = {
     systemInstruction: {
       parts: [{ text: systemInstruction }]
     },
     contents: [
       {
-        parts: [{ text: prompt }]
+        parts
       }
     ],
     generationConfig: {
@@ -82,9 +128,10 @@ export async function generateContent({
 }
 
 /**
- * Streaming content generation using Server-Sent Events (SSE)
+ * Streaming content generation using Server-Sent Events (SSE, text or multimodal)
  * @param {object} options
  * @param {string} options.prompt
+ * @param {string} [options.imageData] Base64 data URL or raw base64 PNG
  * @param {string} [options.systemInstruction]
  * @param {string} [options.model]
  * @param {string} [options.apiKey]
@@ -95,6 +142,7 @@ export async function generateContent({
  */
 export async function streamGenerateContent({
   prompt,
+  imageData,
   systemInstruction = SYSTEM_ENGLISH_DIRECTIVE,
   model,
   apiKey,
@@ -112,13 +160,19 @@ export async function streamGenerateContent({
 
   const endpoint = `${GEMINI_API_BASE}/models/${effectiveModel}:streamGenerateContent?alt=sse&key=${effectiveKey.trim()}`;
 
+  const parts = [{ text: prompt }];
+  if (imageData) {
+    const imagePart = formatInlineDataPart(imageData);
+    if (imagePart) parts.push(imagePart);
+  }
+
   const payload = {
     systemInstruction: {
       parts: [{ text: systemInstruction }]
     },
     contents: [
       {
-        parts: [{ text: prompt }]
+        parts
       }
     ],
     generationConfig: {
