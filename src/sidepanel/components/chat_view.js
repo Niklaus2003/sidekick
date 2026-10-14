@@ -230,19 +230,97 @@ export class ChatViewController {
 
     this.updateEngineBadge("Grounding page...", "busy");
 
-    // 1. Fetch active tab content for grounding
-    const pageData = await this.getActiveTabContent();
+    // 1. Check if user provided an explicit URL in their message (Slice 6 enhancement)
+    const pastedUrl = this.extractUrlFromQuery(userQuery);
+    let pageData = null;
+
+    if (pastedUrl) {
+      pageData = await this.fetchUrlContent(pastedUrl);
+    }
+
+    // Fall back to active tab content if no URL pasted or fetch returned empty
+    if (!pageData || !pageData.textContent) {
+      pageData = await this.getActiveTabContent();
+    }
 
     // 2. Build grounded chat prompt
     const prompt = buildChatPrompt({
-      pageTitle: pageData.title || this.activeTabTitle || "Current Webpage",
-      pageUrl: pageData.url || this.activeTabUrl || "",
-      pageContent: pageData.textContent || "",
+      pageTitle: pageData?.title || this.activeTabTitle || "Current Webpage",
+      pageUrl: pageData?.url || this.activeTabUrl || "",
+      pageContent: pageData?.textContent || "",
       userQuery
     });
 
     // 3. Stream AI answer
-    await this.executeStream(prompt, "Grounded Page Chat");
+    const modeBadge = pastedUrl ? (pageData?.isYouTube ? "YouTube Link" : "Web Link") : "Grounded Chat";
+    await this.executeStream(prompt, modeBadge);
+  }
+
+  /**
+   * Extract first HTTP/HTTPS URL from user query
+   * @param {string} query
+   * @returns {string | null}
+   */
+  extractUrlFromQuery(query) {
+    if (!query) return null;
+    const match = query.match(/https?:\/\/[^\s"'<>]+/i);
+    return match ? match[0] : null;
+  }
+
+  /**
+   * Fetch and parse content directly from a pasted URL
+   * Uses cross-origin permissions granted by host_permissions in Manifest V3
+   * @param {string} url
+   * @returns {Promise<{ title: string, textContent: string, url: string, isYouTube?: boolean } | null>}
+   */
+  async fetchUrlContent(url) {
+    try {
+      this.updateEngineBadge("Reading link...", "busy");
+
+      const isYt = url.includes("youtube.com") || url.includes("youtu.be");
+      if (isYt) {
+        // Fetch YouTube metadata via oEmbed
+        const oembedUrl = `https://noembed.com/embed?url=${encodeURIComponent(url)}`;
+        const resp = await fetch(oembedUrl);
+        if (resp.ok) {
+          const ytInfo = await resp.json();
+          return {
+            title: ytInfo.title || "YouTube Video",
+            textContent: `YOUTUBE VIDEO:\nTitle: ${ytInfo.title || "Unknown"}\nChannel: ${ytInfo.author_name || ""}\nURL: ${url}`,
+            url,
+            isYouTube: true
+          };
+        }
+      }
+
+      // Fetch webpage HTML
+      const resp = await fetch(url);
+      if (!resp.ok) return null;
+
+      const html = await resp.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+
+      // Strip boilerplate tags
+      doc.querySelectorAll("script, style, noscript, svg, nav, footer, header").forEach((el) => el.remove());
+      const title = doc.querySelector("title")?.innerText?.trim() || "Webpage";
+      const cleanText = (doc.body?.innerText || doc.body?.textContent || "")
+        .replace(/\r\n/g, "\n")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .slice(0, 15000)
+        .trim();
+
+      return {
+        title,
+        textContent: cleanText,
+        url,
+        isYouTube: false
+      };
+    } catch (err) {
+      console.warn("[Sidekick Chat] Error fetching direct URL:", err);
+      return null;
+    }
   }
 
   /**
