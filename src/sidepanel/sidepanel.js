@@ -4,9 +4,8 @@
  */
 
 import { getSettings, saveSettings } from "../shared/storage_utils.js";
-import { streamAiContent } from "../ai/ai_router.js";
-import { buildChatPrompt } from "../ai/prompt_templates.js";
 import { SummaryViewController } from "./components/summary_view.js";
+import { ChatViewController } from "./components/chat_view.js";
 
 // DOM Element References
 const elements = {
@@ -59,10 +58,11 @@ async function initSidePanel() {
   setupTabNavigation();
   setupSettingsHandlers();
   setupEmergencyStop();
-  setupQuickPromptChips();
-  setupChatForm();
 
-  // Initialize Summary View Controller (Slice 3)
+  // Initialize View Controllers (Slice 3, 4, 5, 6, 7)
+  const chatController = new ChatViewController();
+  chatController.init();
+
   const summaryController = new SummaryViewController();
   summaryController.init();
 
@@ -307,153 +307,6 @@ function setupEmergencyStop() {
       triggerStop();
     }
   });
-}
-
-/**
- * Quick Prompt Chips in Chat Welcome Card
- */
-function setupQuickPromptChips() {
-  elements.promptChips.forEach((chip) => {
-    chip.addEventListener("click", () => {
-      const promptText = chip.getAttribute("data-prompt");
-      if (promptText) {
-        elements.chatInput.value = promptText;
-        handleSendMessage(promptText);
-      }
-    });
-  });
-}
-
-/**
- * Chat Form & Streaming Controller
- */
-function setupChatForm() {
-  // Auto-resize chat textarea
-  elements.chatInput.addEventListener("input", () => {
-    elements.chatInput.style.height = "auto";
-    elements.chatInput.style.height = `${Math.min(elements.chatInput.scrollHeight, 120)}px`;
-  });
-
-  // Enter to send (Shift+Enter for newline)
-  elements.chatInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      elements.chatForm.dispatchEvent(new Event("submit"));
-    }
-  });
-
-  elements.chatForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const query = elements.chatInput.value.trim();
-    if (!query || state.isStreaming) return;
-
-    elements.chatInput.value = "";
-    elements.chatInput.style.height = "auto";
-
-    await handleSendMessage(query);
-  });
-}
-
-/**
- * Handle sending a user message and streaming the AI response
- * @param {string} userQuery
- */
-async function handleSendMessage(userQuery) {
-  // 1. Append User Bubble
-  appendUserMessage(userQuery);
-
-  // 2. Prepare AI Bubble with Typing Cursor
-  const { contentEl } = createAiBubble();
-  const cursor = document.createElement("span");
-  cursor.className = "typing-cursor";
-  contentEl.appendChild(cursor);
-  scrollToBottom();
-
-  state.isStreaming = true;
-  elements.engineStatus.textContent = "Thinking...";
-  elements.engineStatus.className = "badge badge-status badge-ready";
-
-  try {
-    const prompt = buildChatPrompt({
-      pageTitle: state.activeTabTitle || "Current Webpage",
-      pageUrl: state.activeTabUrl || "",
-      userQuery
-    });
-
-    const result = await streamAiContent({
-      prompt,
-      onChunk: (accumulatedText) => {
-        contentEl.textContent = accumulatedText;
-        contentEl.appendChild(cursor);
-        scrollToBottom();
-      },
-      onProviderChange: (provider, reason) => {
-        if (provider === "groq") {
-          elements.engineStatus.textContent = "Groq: Thinking...";
-        } else {
-          elements.engineStatus.textContent = "Gemini (Fallback)...";
-        }
-      }
-    });
-
-    // Remove typing cursor on completion
-    cursor.remove();
-    elements.engineStatus.textContent = `Ready (${result.provider === "groq" ? "Groq" : "Gemini"})`;
-  } catch (err) {
-    cursor.remove();
-    elements.engineStatus.textContent = "Error";
-    elements.engineStatus.className = "badge badge-locked";
-
-    if (err.message && err.message.includes("API key is not configured")) {
-      contentEl.innerHTML = `
-        <div style="color: #fb7185; line-height: 1.5;">
-          <strong>Gemini API Key Required</strong><br>
-          Please configure your API key in Settings to chat with Sidekick.<br>
-          <button class="btn btn-outline" style="margin-top: 8px; font-size: 11px; padding: 4px 10px;" id="btn-goto-settings">
-            ⚙️ Open Settings
-          </button>
-        </div>
-      `;
-      contentEl.querySelector("#btn-goto-settings")?.addEventListener("click", () => {
-        document.getElementById("tab-btn-settings")?.click();
-      });
-    } else {
-      contentEl.innerHTML = `<span style="color: #fb7185;">Error: ${err.message || "Failed to generate response."}</span>`;
-    }
-  } finally {
-    state.isStreaming = false;
-    scrollToBottom();
-  }
-}
-
-function appendUserMessage(text) {
-  const bubble = document.createElement("div");
-  bubble.className = "chat-bubble user-bubble";
-  bubble.textContent = text;
-  elements.chatMessages.appendChild(bubble);
-  scrollToBottom();
-}
-
-function createAiBubble() {
-  const bubble = document.createElement("div");
-  bubble.className = "chat-bubble ai-bubble";
-
-  const header = document.createElement("div");
-  header.className = "bubble-header";
-  header.innerHTML = '<span class="badge badge-ai">Sidekick</span>';
-
-  const content = document.createElement("div");
-  content.className = "bubble-content";
-
-  bubble.appendChild(header);
-  bubble.appendChild(content);
-  elements.chatMessages.appendChild(bubble);
-
-  return { bubbleEl: bubble, contentEl: content };
-}
-
-function scrollToBottom() {
-  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
 }
 
 // Start application

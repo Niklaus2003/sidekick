@@ -17,11 +17,23 @@ const DEFAULT_SETTINGS = {
   languagePolicy: "english_only"
 };
 
+// Load Context Menus module (Slice 7)
+try {
+  importScripts("context_menus.js");
+} catch (e) {
+  console.warn("[Sidekick Worker] Could not load context_menus.js via importScripts:", e);
+}
+
 const SETTINGS_KEY = "sidekick_settings";
 
 // 1. Extension installation & startup initialization
 chrome.runtime.onInstalled.addListener(async (details) => {
   console.log(`[Sidekick Worker] Extension installed/updated. Reason: ${details.reason}`);
+
+  // Initialize context menus (Slice 7)
+  if (typeof self.setupContextMenus === "function") {
+    self.setupContextMenus();
+  }
 
   // Safely configure side panel behavior if supported
   if (chrome.sidePanel && typeof chrome.sidePanel.setPanelBehavior === "function") {
@@ -40,6 +52,15 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     console.error("[Sidekick Worker] Error initializing settings:", err);
   }
 });
+
+// Re-register context menus on startup if needed
+if (chrome.runtime.onStartup) {
+  chrome.runtime.onStartup.addListener(() => {
+    if (typeof self.setupContextMenus === "function") {
+      self.setupContextMenus();
+    }
+  });
+}
 
 // 2. Fallback action click handler to open side panel
 if (chrome.action && chrome.action.onClicked) {

@@ -45,12 +45,20 @@ It runs on **Groq's LPUs** (`openai/gpt-oss-120b`) for near-zero latency inferen
 * **Multilingual Input Translation**: Automatically detects non-English source material (Hindi, French, Spanish, German, Japanese, etc.) and synthesizes 100% fluent English summaries.
 * **Deterministic Guardrail**: Validates generated tokens against Devanagari Unicode (`/[\u0900-\u097F]/`), preventing foreign-script leakage.
 
-### 6. Grounded In-Page Chat
-* Ask questions about complex terms, data, or arguments on the active webpage.
-* Built-in grounding directives instruct the model to answer strictly from the page content and explicitly state when information is absent.
-* Real-time Server-Sent Events (SSE) streaming with an interactive typing cursor.
+### 6. Grounded In-Page Chat (Slice 6)
+* **Active Page Grounding**: Reads the active browser tab via Mozilla Readability to anchor all answers strictly in page content.
+* **Anti-Hallucination Guardrail**: If asked an unlisted or unrelated question (e.g. general trivia not on page), Sidekick explicitly responds: *"This page does not contain that information."* in English.
+* **Rich Markdown & Code Block Copy**: Real-time streaming with markdown headers, lists, bold/italics, and formatted syntax blocks featuring language tags and one-click **"📋 Copy"** buttons.
+* **Message Copy**: One-click clipboard copy for complete AI response bubbles.
 
-### 7. Zero-Leak Local Privacy
+### 7. Right-Click Context-Menu Quick Actions (Slice 7)
+* **Browser Right-Click Integration**: Registers 3 native Chrome context menu actions for highlighted text (`selection`):
+  1. `📖 Sidekick: Explain this in plain English` (ELI5 simple English explanation).
+  2. `🌐 Sidekick: Translate to English` (translates non-English text cleanly into 100% English).
+  3. `✉️ Sidekick: Draft a professional reply` (generates Concise & Collaborative response options).
+* **Automated Side Panel Routing**: Clicking any context action auto-opens the side panel, focuses the Chat tab, and streams the result.
+
+### 8. Zero-Leak Local Privacy
 * API credentials and profile settings reside exclusively inside `chrome.storage.local`.
 * No intermediary backend servers or telemetry collection.
 
@@ -60,18 +68,19 @@ It runs on **Groq's LPUs** (`openai/gpt-oss-120b`) for near-zero latency inferen
 
 ```mermaid
 graph TD
-    User([User in Chrome]) -->|Opens Side Panel| SP[Sidekick Cockpit UI]
+    User([User in Chrome]) -->|Opens Side Panel or Right-Clicks Text| SP[Sidekick Cockpit UI]
+    CM[Context Menus] -->|Explain / Translate / Reply| SW[Service Worker & Storage]
+    SW -->|EXECUTE_CONTEXT_ACTION| CV[Chat View Controller]
     SP -->|EXTRACT_ARTICLE / EXTRACT_YOUTUBE| CS[Content Script / YT Extractor]
     CS -->|DOM Clone / Media Cues| RD[Mozilla Readability / HTML5 Player]
     RD -->|Clean Article / Chapter Data| CS
-    CS -->|Structured Metadata| SP
-    SP -->|Stream Request with Detail Mode| AR[AI Provider Router]
+    CS -->|Grounded Page Context| CV
+    CV -->|Stream Grounded Prompt| AR[AI Provider Router]
     AR -->|Primary| GQ[Groq LPU API: gpt-oss-120b]
     GQ -.->|Rate Limit / 4xx Failover| GM[Gemini API: 3.5 Flash-Lite]
     AR -->|Validate English Guardrail| RV[Unicode Response Validator]
-    RV -->|SSE Chunks & [MM:SS] Chips| SP
-    SP -->|SEEK_YOUTUBE on Chip Click| CS
-    SP -->|Render Formatted Cards| User
+    RV -->|SSE Chunks, Code Blocks & Chips| CV
+    CV -->|Render Formatted Markdown & Copy Buttons| User
 ```
 
 ---
@@ -81,11 +90,12 @@ graph TD
 ```text
 sidekick/
 ├── docs/                      # Architecture, implementation plan, problem statement
-├── manifest.json              # Chrome Manifest V3 configuration
+├── manifest.json              # Chrome Manifest V3 configuration (sidePanel, contextMenus)
 ├── icons/                     # Extension icons (16, 32, 48, 128px)
 ├── src/
 │   ├── background/
-│   │   └── service_worker.js  # Lifecycle manager & multi-key verification
+│   │   ├── service_worker.js  # Lifecycle manager & multi-key verification
+│   │   └── context_menus.js   # Browser right-click selection actions (Slice 7)
 │   ├── content/
 │   │   ├── readability.js     # Bundled Mozilla Readability
 │   │   ├── content_script.js  # In-page DOM extractor & fallback
@@ -95,12 +105,13 @@ sidekick/
 │   │   ├── sidepanel.css      # Dark-mode design system & glassmorphism
 │   │   ├── sidepanel.js       # Main side panel controller
 │   │   └── components/
-│   │       └── summary_view.js# Summary controller, seek chips & card renderer
+│   │       ├── summary_view.js# Summary controller, seek chips & card renderer
+│   │       └── chat_view.js   # Grounded chat controller, code blocks & context actions
 │   ├── ai/
 │   │   ├── ai_router.js       # Groq primary + Gemini fallback router
 │   │   ├── groq_client.js     # Groq SSE streaming client
 │   │   ├── gemini_client.js   # Gemini REST client
-│   │   ├── prompt_templates.js# Structured prompts, YouTube chapters & directives
+│   │   ├── prompt_templates.js# Grounded chat, YouTube chapters & quick action prompts
 │   │   └── response_validator.js# Unicode Devanagari guardrail & JSON parser
 │   └── shared/
 │       └── storage_utils.js   # Chrome Storage Local & Session utilities
@@ -110,6 +121,7 @@ sidekick/
 │   ├── run_dev.py             # Persistent local test server & Chrome launcher
 │   ├── test_slice3.py         # Automated extraction & summary test suite
 │   ├── test_slices_4_5.py     # YouTube chapter extraction & English guardrail suite
+│   ├── test_slices_6_7.py     # Grounded chat & context-menu quick action suite
 │   └── test_groq_primary.py   # Groq & Gemini live endpoint verification
 ├── .env.example               # Template for API keys
 ├── .gitignore                 # Strict rules protecting credentials & venv
@@ -159,9 +171,10 @@ python scripts/run_dev.py
 1. Navigate to: `http://127.0.0.1:8765/demo/sample_article.html`.
 2. Open Sidekick in the side panel.
 3. Switch to the **Summary** tab and click **"✨ Summarize Current Page"**.
-4. Observe the clean Readability extraction, metadata badges, and streaming summary.
-5. Switch to the **Chat** tab and ask:
-   > *"What makes in-browser agent architectures different from cloud chat interfaces?"*
+4. Switch to the **Chat** tab and ask grounded questions:
+   > *"What fidelity was achieved in the quantum experiment?"*
+5. Highlight any text on the page, right-click, and select:
+   > **Sidekick: Explain this in plain English**
 
 ---
 
@@ -178,6 +191,9 @@ python scripts/test_slice3.py
 
 # Verify YouTube chapter summary generation, timestamp seeking, and English guardrail
 python scripts/test_slices_4_5.py
+
+# Verify Grounded page chat, unrelated question rejection, and context-menu actions
+python scripts/test_slices_6_7.py
 ```
 
 ---
@@ -185,7 +201,8 @@ python scripts/test_slices_4_5.py
 ## 🗺️ Roadmap
 
 - [x] **Phase 1: The Eyes (Week 1)** — MV3 side panel foundation, Mozilla Readability integration, Groq LPU primary inference, Gemini fallback router, structured English summaries, YouTube video chapter summarization with clickable seeking, and English-only guardrails.
-- [ ] **Phase 2: The Brain (Week 2)** — Multimodal visual inspection (screenshots), grounded page chat, and context-menu quick explainers.
+- [x] **Phase 2: The Brain (Week 2, Part 1)** — Grounded in-page chat with anti-hallucination guardrails, code block syntax copy, and browser right-click context menu shortcuts (Explain, Translate, Draft Reply).
+- [ ] **Phase 2: The Brain (Week 2, Part 2)** — Multimodal visual inspection (screenshot region selector).
 - [ ] **Phase 3: The Hands (Week 3)** — Interactive element scanning, isolated badge overlays, and approval-based human-in-the-loop task execution.
 - [ ] **Phase 4: Memory & Safety (Week 4)** — Local profile memory vault, saved workflow recipes, and action dry-run simulators.
 

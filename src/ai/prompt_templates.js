@@ -31,19 +31,20 @@ Title: ${pageTitle}
 URL: ${pageUrl}
 
 <PAGE_CONTENT>
-${pageContent.trim()}
+${pageContent.trim().slice(0, 20000)}
 </PAGE_CONTENT>
 
-GROUNDING INSTRUCTIONS:
-- Answer the user's question using the page content provided above.
-- If the page content does not contain the answer, explicitly and clearly state: "This page does not contain that information." in English. Do not hallucinate or invent unlisted facts.
-- Respond strictly in fluent English.`
+GROUNDING DIRECTIVES:
+1. Answer the user's question using ONLY the facts, figures, and context provided in <PAGE_CONTENT> above.
+2. If the page content does NOT contain the answer, or if the user asks an unrelated question not discussed on this page (such as general trivia, unrelated geography, or external world facts), you MUST explicitly state: "This page does not contain that information." in English.
+3. Under no circumstance should you hallucinate, speculate, or bring in external knowledge not present in the page content.
+4. Respond strictly in fluent, natural English.`
     : `GENERAL BROWSER ASSISTANT:
 Respond to the user's request strictly in fluent English.`;
 
   return `${contextSnippet}
 
-USER REQUEST:
+USER QUESTION:
 ${userQuery}`;
 }
 
@@ -167,6 +168,16 @@ CRITICAL: Output must be strictly in plain English. Never output in Hindi or Hin
 }
 
 /**
+ * Build Translate to English prompt (Slice 7)
+ * @param {string | object} params
+ * @returns {string}
+ */
+export function buildTranslatePrompt(params) {
+  const text = typeof params === "string" ? params : (params?.selectedText || "");
+  return buildTranslateToEnglishPrompt(text);
+}
+
+/**
  * Build Translate to English prompt
  * @param {string} foreignText
  * @returns {string}
@@ -177,5 +188,26 @@ export function buildTranslateToEnglishPrompt(foreignText) {
 SOURCE TEXT:
 "${foreignText.trim()}"
 
-CRITICAL: Translate INTO English. The response must be entirely in English.`;
+CRITICAL: Translate INTO English. The response must be entirely in English. Never output in Hindi, Hinglish, or any foreign script.`;
+}
+
+/**
+ * Build Draft a Professional Reply prompt (Slice 7)
+ * @param {object} params
+ * @param {string} params.selectedText
+ * @param {string} [params.tone="professional"]
+ * @returns {string}
+ */
+export function buildDraftReplyPrompt({ selectedText, tone = "professional" }) {
+  return `Draft a polite, concise, and professional reply in English to the following message, comment, or email.
+
+ORIGINAL MESSAGE:
+"${selectedText.trim()}"
+
+REQUIREMENTS:
+- Draft polished, context-appropriate replies strictly in English.
+- Provide 2 distinct options:
+  1. **Option 1 (Concise & Direct)**: A brief, professional reply.
+  2. **Option 2 (Detailed & Collaborative)**: A slightly more comprehensive, warm reply.
+- Never output in Hindi, Hinglish, or any foreign script.`;
 }
